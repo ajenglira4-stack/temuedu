@@ -129,6 +129,8 @@ Route::middleware(['auth', 'role:user,konsultan'])->group(function () {
         ->name('consultation.close');
 });
 
+Route::get('/logout', fn () => redirect()->route('login'));
+
 // ==========================================
 // ROUTE YANG MEMBUTUHKAN LOGIN (SEMUA ROLE)
 // ==========================================
