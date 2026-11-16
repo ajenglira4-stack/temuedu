@@ -14,6 +14,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Percayai reverse proxy (seperti Railway) agar HTTPS/IP client terbaca dengan benar
+        $middleware->trustProxies(at: '*');
+
         // Daftarkan alias "role" agar bisa dipakai: ->middleware('role:admin')
         // Webhook Midtrans dikirim dari server Midtrans (tanpa token CSRF); keasliannya dicek lewat signature.
         $middleware->validateCsrfTokens(except: ['midtrans/notification']);
