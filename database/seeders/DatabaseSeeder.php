@@ -11,6 +11,11 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(ProdiSeeder::class);
 
+        // Impor satu kali dari temuedu.sql: set IMPORT_SQL=true, deploy, lalu hapus variabelnya.
+        if (filter_var(env('IMPORT_SQL'), FILTER_VALIDATE_BOOLEAN)) {
+            $this->command?->call('temuedu:import-sql');
+        }
+
         // Akun admin hanya dibuat jika ADMIN_EMAIL & ADMIN_PASSWORD diisi di file .env.
         // Tidak ada password bawaan di kode. Alternatif: php artisan temuedu:buat-admin
         $email = env('ADMIN_EMAIL');
