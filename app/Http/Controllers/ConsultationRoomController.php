@@ -43,6 +43,19 @@ class ConsultationRoomController extends Controller
 
         $consultation->load(['user', 'consultant.user', 'prodi']);
 
+        // Untuk layanan Chat: timer tunggu respon konsultan (3 menit) langsung jalan saat mahasiswa masuk ruang chat
+        if ($role === 'student'
+            && $consultation->service === 'chat'
+            && $consultation->isChatOpen()
+            && ! $consultation->consultant_replied_at
+            && ! $consultation->response_deadline_at
+            && ! $consultation->started_at) {
+            $consultation->update([
+                'response_deadline_at' => now()->addMinutes((int) config('temuedu.response_wait_minutes', 3)),
+            ]);
+            $consultation->refresh();
+        }
+
         // pesan dari lawan chat ditandai sudah dibaca
         $consultation->messages()
             ->where('sender_id', '!=', Auth::id())
@@ -162,10 +175,10 @@ class ConsultationRoomController extends Controller
                 return;
             }
 
-            $firstStart = $role === 'student' && ! $c->started_at && ! $c->response_deadline_at;
+            $firstStart = $role === 'student' && ! $c->started_at;
 
             // Timer baru dimulai saat konsultan benar-benar bisa menjawab
-            if ($firstStart && $c->isTimed() && ! $availability->isAvailableNow($consultant)) {
+            if ($firstStart && $c->isTimed() && ! $c->response_deadline_at && ! $availability->isAvailableNow($consultant)) {
                 $next = $availability->nextWindow($consultant);
                 $error = 'Konsultan sedang di luar jam layanan. Mulai chat saat jam layanan'
                     . ($next ? ' (berikutnya: ' . $next['label'] . ').' : '.');
@@ -181,15 +194,17 @@ class ConsultationRoomController extends Controller
             }
 
             if ($firstStart && $c->service === 'chat') {
-                $waitMinutes = (int) config('temuedu.response_wait_minutes', 3);
-                $c->update(['response_deadline_at' => now()->addMinutes($waitMinutes)]);
+                if (! $c->response_deadline_at) {
+                    $waitMinutes = (int) config('temuedu.response_wait_minutes', 3);
+                    $c->update(['response_deadline_at' => now()->addMinutes($waitMinutes)]);
 
-                $created[] = Message::create([
-                    'consultation_id' => $c->id,
-                    'sender_id' => Auth::id(),
-                    'tipe' => 'system',
-                    'isi' => 'Pesan terkirim. Menunggu respon konsultan (maksimal ' . $waitMinutes . ' menit). Durasi konsultasi ' . $c->timerMinutes() . ' menit baru berjalan setelah konsultan membalas.',
-                ]);
+                    $created[] = Message::create([
+                        'consultation_id' => $c->id,
+                        'sender_id' => Auth::id(),
+                        'tipe' => 'system',
+                        'isi' => 'Pesan terkirim. Menunggu respon konsultan (maksimal ' . $waitMinutes . ' menit). Durasi konsultasi ' . $c->timerMinutes() . ' menit baru berjalan setelah konsultan membalas.',
+                    ]);
+                }
             } elseif ($firstStart && $c->isTimed()) {
                 $c->start();
 
