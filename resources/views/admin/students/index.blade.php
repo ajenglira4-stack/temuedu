@@ -18,20 +18,17 @@
     @else
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Mahasiswa</th><th>Konsultasi</th><th>Terdaftar</th></tr></thead>
+          <thead><tr><th>Mahasiswa</th><th>Jurusan</th><th>Konsultasi</th><th>Terdaftar</th></tr></thead>
           <tbody>
             @foreach ($students as $s)
               <tr>
                 <td>
                   <div class="person">
                     <div class="ava">{{ strtoupper(mb_substr($s->name, 0, 1)) }}</div>
-                    <div>
-                      <b>{{ $s->name }}</b>
-                      <small>{{ $s->email }}</small>
-                      <small style="display:block;">Jurusan: {{ $s->jurusan ?: '-' }}</small>
-                    </div>
+                    <div><b>{{ $s->name }}</b><small>{{ $s->email }}</small></div>
                   </div>
                 </td>
+                <td>{{ $s->jurusan ?: '-' }}</td>
                 <td><span class="badge">{{ $s->consultations_count }}x</span></td>
                 <td>{{ $s->created_at->translatedFormat('d M Y') }}</td>
               </tr>
