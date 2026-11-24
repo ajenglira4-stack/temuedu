@@ -73,12 +73,15 @@ class AuthController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'jurusan' => ['required', 'string', 'max:120'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ], [
             'name.required' => 'Nama lengkap wajib diisi.',
             'email.required' => 'Email wajib diisi.',
             'email.email' => 'Format email tidak valid.',
             'email.unique' => 'Email ini sudah terdaftar.',
+            'jurusan.required' => 'Jurusan wajib diisi.',
+            'jurusan.max' => 'Jurusan maksimal 120 karakter.',
             'password.required' => 'Kata sandi wajib diisi.',
             'password.min' => 'Kata sandi minimal 8 karakter.',
             'password.confirmed' => 'Konfirmasi kata sandi tidak sama.',
@@ -88,6 +91,7 @@ class AuthController extends Controller
         $user->forceFill([
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'jurusan' => trim($validated['jurusan']),
             'password' => $validated['password'], // di-hash otomatis oleh cast 'hashed'
             'role' => 'user',                      // 'user' = mahasiswa
         ])->save();

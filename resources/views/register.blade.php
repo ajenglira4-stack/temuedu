@@ -667,6 +667,37 @@
                 </div>
 
 
+                <!-- JURUSAN -->
+
+                <div class="form-group">
+
+                    <label
+                        for="jurusan"
+                        class="field-label"
+                    >
+                        Jurusan
+                    </label>
+
+                    <input
+                        type="text"
+                        name="jurusan"
+                        id="jurusan"
+                        class="field"
+                        placeholder="Contoh: Akuntansi / Manajemen"
+                        value="{{ old('jurusan') }}"
+                        maxlength="120"
+                        required
+                    >
+
+                    @error('jurusan')
+                        <div class="field-error">
+                            {{ $message }}
+                        </div>
+                    @enderror
+
+                </div>
+
+
                 <!-- PASSWORD -->
 
                 <div class="form-group">

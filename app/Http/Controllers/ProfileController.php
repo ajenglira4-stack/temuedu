@@ -48,6 +48,7 @@ class ProfileController extends Controller
                 'max:255',
                 'unique:users,email,' . $user->id,
             ],
+            'jurusan' => ['nullable', 'string', 'max:120'],
         ], [
             'name.required' => 'Nama lengkap wajib diisi.',
             'name.max' => 'Nama maksimal 255 karakter.',
@@ -55,12 +56,14 @@ class ProfileController extends Controller
             'email.email' => 'Format email tidak valid.',
             'email.unique' => 'Email tersebut sudah digunakan akun lain.',
             'email.max' => 'Email maksimal 255 karakter.',
+            'jurusan.max' => 'Jurusan maksimal 120 karakter.',
         ]);
 
-        // Hanya memperbarui nama dan email akun yang sedang login.
+        // Hanya memperbarui nama, email, dan jurusan akun yang sedang login.
         // Role dan password tidak dapat diubah melalui form ini.
         $user->name = $data['name'];
         $user->email = $data['email'];
+        $user->jurusan = isset($data['jurusan']) ? (trim($data['jurusan']) ?: null) : null;
         $user->save();
 
         return redirect()

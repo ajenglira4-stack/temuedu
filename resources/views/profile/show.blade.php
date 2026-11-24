@@ -220,6 +220,11 @@
                 </div>
 
                 <div>
+                    <dt>Jurusan</dt>
+                    <dd>{{ $user->jurusan ?: '-' }}</dd>
+                </div>
+
+                <div>
                     <dt>Bergabung sejak</dt>
                     <dd>{{ $user->created_at->translatedFormat('d F Y') }}</dd>
                 </div>
@@ -286,6 +291,23 @@
                         >
 
                         @error('email')
+                            <div class="form-error">{{ $message }}</div>
+                        @enderror
+                    </div>
+
+                    <div class="form-group">
+                        <label for="jurusan">Jurusan</label>
+
+                        <input
+                            type="text"
+                            id="jurusan"
+                            name="jurusan"
+                            value="{{ old('jurusan', $user->jurusan) }}"
+                            placeholder="Contoh: Akuntansi / Manajemen"
+                            maxlength="120"
+                        >
+
+                        @error('jurusan')
                             <div class="form-error">{{ $message }}</div>
                         @enderror
                     </div>

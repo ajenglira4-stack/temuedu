@@ -15,7 +15,9 @@ class StudentController extends Controller
             ->withCount('consultations')
             ->when($request->filled('q'), function ($q) use ($request) {
                 $s = $request->q;
-                $q->where(fn ($w) => $w->where('name', 'like', "%{$s}%")->orWhere('email', 'like', "%{$s}%"));
+                $q->where(fn ($w) => $w->where('name', 'like', "%{$s}%")
+                    ->orWhere('email', 'like', "%{$s}%")
+                    ->orWhere('jurusan', 'like', "%{$s}%"));
             })
             ->latest()
             ->paginate(10)

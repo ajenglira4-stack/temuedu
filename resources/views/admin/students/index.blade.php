@@ -6,7 +6,7 @@
 @section('content')
   <div class="card">
     <form method="GET" class="toolbar">
-      <input type="text" name="q" value="{{ request('q') }}" placeholder="Cari nama atau email...">
+      <input type="text" name="q" value="{{ request('q') }}" placeholder="Cari nama, email, atau jurusan...">
       <button type="submit" class="btn btn-ghost"><i class="fa-solid fa-magnifying-glass"></i> Cari</button>
       @if (request()->filled('q'))
         <a href="{{ route('admin.students.index') }}" class="btn btn-ghost">Reset</a>
@@ -25,7 +25,11 @@
                 <td>
                   <div class="person">
                     <div class="ava">{{ strtoupper(mb_substr($s->name, 0, 1)) }}</div>
-                    <div><b>{{ $s->name }}</b><small>{{ $s->email }}</small></div>
+                    <div>
+                      <b>{{ $s->name }}</b>
+                      <small>{{ $s->email }}</small>
+                      <small style="display:block;">Jurusan: {{ $s->jurusan ?: '-' }}</small>
+                    </div>
                   </div>
                 </td>
                 <td><span class="badge">{{ $s->consultations_count }}x</span></td>

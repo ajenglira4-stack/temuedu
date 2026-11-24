@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Consultant extends Model
 {
@@ -24,10 +25,12 @@ class Consultant extends Model
         ];
     }
 
-    /** URL foto profil (null kalau belum ada foto). Dipakai: $consultant->foto_url */
+    /** URL foto profil (null kalau belum ada foto atau file fisiknya tidak ditemukan). Dipakai: $consultant->foto_url */
     protected function fotoUrl(): Attribute
     {
-        return Attribute::get(fn () => $this->foto ? asset('storage/' . $this->foto) : null);
+        return Attribute::get(fn () => ($this->foto && Storage::disk('public')->exists($this->foto))
+            ? asset('storage/' . $this->foto)
+            : null);
     }
 
     /** Foto profil, atau avatar inisial jika belum ada foto. Dipakai: $consultant->avatar_url */
