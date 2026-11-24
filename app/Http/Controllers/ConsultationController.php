@@ -61,7 +61,7 @@ class ConsultationController extends Controller
                     'kompetensi' => $c->kompetensi ?: '-',
                     'alumni' => $c->alumni ?: '-',
                     'ipk' => $c->ipk ?? '-',
-                    'rating' => $c->rating_count > 0 ? $c->rating_avg : 'Baru',
+                    'rating' => $c->rating_count > 0 ? $c->rating_avg . ' (' . $c->rating_count . ' ulasan)' : 'Baru',
                     'tersedia' => $info['now'],            // sedang di dalam jam layanan?
                     'berikutnya' => $info['next'],         // jam layanan berikutnya (jika sedang tidak tersedia)
                     'jadwal' => $info['weekly'],           // ringkasan jam layanan mingguan
@@ -89,7 +89,7 @@ class ConsultationController extends Controller
                     ->orWhereHas('appointments')
                     ->orWhereHas('payments', fn ($p) => $p->where('status', 'pending'));
             })
-            ->with(['consultant.user', 'prodi', 'appointments.schedule', 'payments'])
+            ->with(['consultant.user', 'prodi', 'appointments.schedule', 'payments', 'review'])
             ->withCount(['messages as unread_count' => fn ($q) => $q
                 ->where('tipe', 'text')->where('sender_id', '!=', $user->id)->whereNull('read_at')])
             ->orderByDesc('id')

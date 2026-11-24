@@ -8,6 +8,7 @@ use App\Models\Consultation;
 use App\Models\Message;
 use App\Models\Payment;
 use App\Services\AvailabilityService;
+use App\Services\ConsultationQueueService;
 use App\Support\Avatar;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -21,7 +22,7 @@ use Illuminate\Support\Str;
  */
 class ConsultationRoomController extends Controller
 {
-    public function show(Consultation $consultation, AvailabilityService $availability)
+    public function show(Consultation $consultation, AvailabilityService $availability, ConsultationQueueService $queueService)
     {
         $role = $this->roleIn($consultation);
         $consultation->expireIfNeeded();
@@ -67,7 +68,8 @@ class ConsultationRoomController extends Controller
             $back = route('consultant.dashboard');
         }
 
-        $state = $this->state($consultation);
+        $state = $this->state($consultation, $availability, $queueService);
+        $existingReview = $consultation->review;
 
         $appointments = $consultation->appointments()->with('schedule')->orderByDesc('id')->get();
 
@@ -85,12 +87,12 @@ class ConsultationRoomController extends Controller
 
         return view('consultation.chat', compact(
             'consultation', 'role', 'peer', 'back', 'messages', 'state', 'appointments',
-            'detailUrl', 'availabilityInfo', 'service', 'canPropose', 'autoOpenMeet'
+            'detailUrl', 'availabilityInfo', 'service', 'canPropose', 'autoOpenMeet', 'existingReview'
         ));
     }
 
     /** Polling: ambil pesan baru (id > after) + status sesi. */
-    public function messages(Request $request, Consultation $consultation)
+    public function messages(Request $request, Consultation $consultation, AvailabilityService $availability, ConsultationQueueService $queueService)
     {
         $this->roleIn($consultation);
 
@@ -111,12 +113,12 @@ class ConsultationRoomController extends Controller
 
         return response()->json([
             'messages' => $new->map(fn ($m) => $this->format($m))->values(),
-            'state' => $this->state($consultation),
+            'state' => $this->state($consultation, $availability, $queueService),
         ]);
     }
 
-    /** Kirim pesan. Pesan pertama mahasiswa memulai timer (Chat 60 mnt / koordinasi Offline Meet). */
-    public function store(Request $request, Consultation $consultation, AvailabilityService $availability)
+    /** Kirim pesan. Untuk Chat: pesan pertama mahasiswa mulai timer tunggu 3 menit; timer 60 menit mulai saat konsultan membalas. */
+    public function store(Request $request, Consultation $consultation, AvailabilityService $availability, ConsultationQueueService $queueService)
     {
         $role = $this->roleIn($consultation);
 
@@ -160,7 +162,7 @@ class ConsultationRoomController extends Controller
                 return;
             }
 
-            $firstStart = $role === 'student' && ! $c->started_at;
+            $firstStart = $role === 'student' && ! $c->started_at && ! $c->response_deadline_at;
 
             // Timer baru dimulai saat konsultan benar-benar bisa menjawab
             if ($firstStart && $c->isTimed() && ! $availability->isAvailableNow($consultant)) {
@@ -178,7 +180,17 @@ class ConsultationRoomController extends Controller
                 }
             }
 
-            if ($firstStart && $c->isTimed()) {
+            if ($firstStart && $c->service === 'chat') {
+                $waitMinutes = (int) config('temuedu.response_wait_minutes', 3);
+                $c->update(['response_deadline_at' => now()->addMinutes($waitMinutes)]);
+
+                $created[] = Message::create([
+                    'consultation_id' => $c->id,
+                    'sender_id' => Auth::id(),
+                    'tipe' => 'system',
+                    'isi' => 'Pesan terkirim. Menunggu respon konsultan (maksimal ' . $waitMinutes . ' menit). Durasi konsultasi ' . $c->timerMinutes() . ' menit baru berjalan setelah konsultan membalas.',
+                ]);
+            } elseif ($firstStart && $c->isTimed()) {
                 $c->start();
 
                 $created[] = Message::create([
@@ -187,6 +199,26 @@ class ConsultationRoomController extends Controller
                     'tipe' => 'system',
                     'isi' => 'Sesi konsultasi dimulai. Chat berlaku ' . $c->timerMinutes() . ' menit, sampai pukul ' . $c->expires_at->format('H:i') . '.',
                 ]);
+            }
+
+            // Saat konsultan membalas pertama kali di layanan Chat, hentikan waktu tunggu & mulai timer 60 menit
+            if ($role === 'consultant' && $c->service === 'chat' && ! $c->consultant_replied_at) {
+                $c->update([
+                    'consultant_replied_at' => now(),
+                    'waiting_queue' => false,
+                    'queued_at' => null,
+                ]);
+
+                if (! $c->started_at) {
+                    $c->start();
+
+                    $created[] = Message::create([
+                        'consultation_id' => $c->id,
+                        'sender_id' => Auth::id(),
+                        'tipe' => 'system',
+                        'isi' => 'Konsultan telah siap. Sesi konsultasi dimulai (' . $c->timerMinutes() . ' menit, sampai pukul ' . $c->expires_at->format('H:i') . ').',
+                    ]);
+                }
             }
 
             $created[] = Message::create([
@@ -200,17 +232,17 @@ class ConsultationRoomController extends Controller
         $fresh = $consultation->fresh();
 
         if ($error) {
-            return response()->json(['error' => $error, 'state' => $this->state($fresh)], $status);
+            return response()->json(['error' => $error, 'state' => $this->state($fresh, $availability, $queueService)], $status);
         }
 
         return response()->json([
             'messages' => array_map(fn ($m) => $this->format($m), $created),
-            'state' => $this->state($fresh),
+            'state' => $this->state($fresh, $availability, $queueService),
         ]);
     }
 
     /** Akhiri sesi (oleh mahasiswa atau konsultan). */
-    public function close(Consultation $consultation)
+    public function close(Consultation $consultation, AvailabilityService $availability, ConsultationQueueService $queueService)
     {
         $role = $this->roleIn($consultation);
 
@@ -221,7 +253,11 @@ class ConsultationRoomController extends Controller
         $consultation->expireIfNeeded();
 
         if ($consultation->status === 'active') {
-            $consultation->update(['status' => 'closed']);
+            $consultation->update([
+                'status' => 'closed',
+                'waiting_queue' => false,
+                'queued_at' => null,
+            ]);
 
             Message::create([
                 'consultation_id' => $consultation->id,
@@ -229,9 +265,68 @@ class ConsultationRoomController extends Controller
                 'tipe' => 'system',
                 'isi' => 'Sesi konsultasi diakhiri oleh ' . ($role === 'student' ? 'mahasiswa' : 'konsultan') . '.',
             ]);
+
+            $queueService->assignNextWaitingStudent($consultation->consultant, $availability);
         }
 
-        return response()->json(['state' => $this->state($consultation->fresh())]);
+        return response()->json(['state' => $this->state($consultation->fresh(), $availability, $queueService)]);
+    }
+
+    /** Mahasiswa memilih konsultan lain yang tersedia setelah 3 menit konsultan belum merespon. */
+    public function switchConsultant(Request $request, Consultation $consultation, AvailabilityService $availability, ConsultationQueueService $queueService)
+    {
+        if ($this->roleIn($consultation) !== 'student') {
+            abort(403);
+        }
+
+        if (! $consultation->canSwitchConsultant()) {
+            return response()->json(['error' => 'Perpindahan konsultan hanya tersedia setelah melewati batas tunggu 3 menit tanpa balasan.'], 422);
+        }
+
+        $data = $request->validate([
+            'consultant_id' => ['required', 'integer', 'exists:consultants,id'],
+        ]);
+
+        $target = Consultant::where('is_active', true)
+            ->where('prodi_id', $consultation->prodi_id)
+            ->where('id', '!=', $consultation->consultant_id)
+            ->find($data['consultant_id']);
+
+        if (! $target || ! $availability->isAvailableNow($target) || $queueService->isConsultantBusy($target)) {
+            return response()->json(['error' => 'Konsultan yang dipilih sedang tidak tersedia atau sibuk. Silakan pilih konsultan lain atau masuk antrian.'], 422);
+        }
+
+        $new = $queueService->switchToConsultant($consultation, $target);
+
+        return response()->json(['redirect' => route('consultation.room', $new)]);
+    }
+
+    /** Mahasiswa masuk antrian menunggu konsultan yang tersedia. */
+    public function enterQueue(Consultation $consultation, AvailabilityService $availability, ConsultationQueueService $queueService)
+    {
+        if ($this->roleIn($consultation) !== 'student') {
+            abort(403);
+        }
+
+        if (! $consultation->canSwitchConsultant()) {
+            return response()->json(['error' => 'Antrian hanya tersedia setelah melewati batas tunggu 3 menit tanpa balasan.'], 422);
+        }
+
+        if (! $consultation->waiting_queue) {
+            $consultation->update([
+                'waiting_queue' => true,
+                'queued_at' => now(),
+            ]);
+
+            Message::create([
+                'consultation_id' => $consultation->id,
+                'sender_id' => Auth::id(),
+                'tipe' => 'system',
+                'isi' => 'Mahasiswa masuk antrian menunggu. Jika ada konsultan yang selesai melayani mahasiswa sebelumnya, sesi akan dialihkan otomatis.',
+            ]);
+        }
+
+        return response()->json(['state' => $this->state($consultation->fresh(), $availability, $queueService)]);
     }
 
     /**
@@ -391,8 +486,21 @@ class ConsultationRoomController extends Controller
         ];
     }
 
-    private function state(Consultation $c): array
+    private function state(Consultation $c, ?AvailabilityService $availability = null, ?ConsultationQueueService $queueService = null): array
     {
+        $switchedTo = $c->status === 'closed'
+            ? Consultation::where('switched_from_consultation_id', $c->id)->latest('id')->first()
+            : null;
+
+        $canSwitch = $c->canSwitchConsultant();
+        $isStudent = (int) $c->user_id === (int) Auth::id();
+
+        $available = ($canSwitch && $isStudent && $availability && $queueService)
+            ? $queueService->availableConsultantsForSwitch($c, $availability)
+            : [];
+
+        $review = $c->review;
+
         return [
             'status' => $c->status,
             'open' => $c->isChatOpen(),
@@ -401,6 +509,14 @@ class ConsultationRoomController extends Controller
             'service' => $c->service,
             'timed' => $c->isTimed(),
             'minutes' => $c->timerMinutes(),
+            'waiting_response' => $c->isWaitingResponse(),
+            'wait_remaining' => $c->waitRemainingSeconds(),
+            'can_switch' => $canSwitch,
+            'waiting_queue' => (bool) $c->waiting_queue,
+            'available_consultants' => $available,
+            'redirect' => $switchedTo && $isStudent ? route('consultation.room', $switchedTo) : null,
+            'reviewed' => (bool) $review,
+            'review' => $review ? ['rating' => $review->rating, 'ulasan' => $review->ulasan] : null,
         ];
     }
 }

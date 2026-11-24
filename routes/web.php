@@ -9,6 +9,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\Consultant\DashboardController as ConsultantDashboardController;
 use App\Http\Controllers\Consultant\ConsultationController as ConsultantConsultationController;
 use App\Http\Controllers\Consultant\AppointmentController as ConsultantAppointmentController;
@@ -101,6 +102,17 @@ Route::put('/profile', [ProfileController::class, 'update'])
 
     Route::post('/consultation/room/{consultation}/appointments/{appointmentId}/cancel', [ConsultationRoomController::class, 'cancelAppointment'])
         ->name('consultation.appointments.cancel');
+
+    // Rating & ulasan konsultan setelah sesi selesai
+    Route::post('/consultation/room/{consultation}/review', [ReviewController::class, 'store'])
+        ->name('consultation.review.store');
+
+    // Pindah konsultan atau masuk antrian setelah batas waktu tunggu 3 menit
+    Route::post('/consultation/room/{consultation}/switch', [ConsultationRoomController::class, 'switchConsultant'])
+        ->name('consultation.switch');
+
+    Route::post('/consultation/room/{consultation}/queue', [ConsultationRoomController::class, 'enterQueue'])
+        ->name('consultation.queue');
 });
 
 // Notifikasi pesan: jumlah belum dibaca (polling bel navbar) & pengaturan ON/OFF

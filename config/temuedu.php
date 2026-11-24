@@ -64,6 +64,9 @@ return [
     // Lama chat koordinasi untuk layanan Offline Meet (sebelum pengajuan pertemuan disepakati)
     'offline_coordination_minutes' => 30,
 
+    // Waktu tunggu respon konsultan (menit) sebelum mahasiswa berhak memilih konsultan lain / masuk antrian
+    'response_wait_minutes' => 3,
+
     // Slot yang sedang menunggu pembayaran ditahan selama ... menit, lalu dilepas otomatis
     'payment_hold_minutes' => 30,
 

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Consultant;
 use App\Models\Consultation;
 use App\Models\Message;
+use App\Services\AvailabilityService;
+use App\Services\ConsultationQueueService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -76,7 +78,7 @@ class ConsultationController extends Controller
     }
 
     /** Akhiri sesi chat dari halaman detail. */
-    public function close($id)
+    public function close($id, AvailabilityService $availability, ConsultationQueueService $queueService)
     {
         $me = $this->me();
 
@@ -92,6 +94,8 @@ class ConsultationController extends Controller
                 'tipe' => 'system',
                 'isi' => 'Sesi konsultasi diakhiri oleh konsultan.',
             ]);
+
+            $queueService->assignNextWaitingStudent($me, $availability);
         }
 
         return redirect()->route('consultant.consultations.show', $consultation->id)

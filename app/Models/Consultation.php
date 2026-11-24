@@ -12,11 +12,21 @@ class Consultation extends Model
     protected $fillable = [
         'user_id', 'consultant_id', 'prodi_id', 'service', 'is_paid', 'topik', 'harga',
         'status', 'started_at', 'expires_at',
+        'response_deadline_at', 'consultant_replied_at', 'waiting_queue', 'queued_at',
+        'switched_from_consultation_id',
     ];
 
     protected function casts(): array
     {
-        return ['started_at' => 'datetime', 'expires_at' => 'datetime', 'is_paid' => 'boolean'];
+        return [
+            'started_at' => 'datetime',
+            'expires_at' => 'datetime',
+            'response_deadline_at' => 'datetime',
+            'consultant_replied_at' => 'datetime',
+            'queued_at' => 'datetime',
+            'is_paid' => 'boolean',
+            'waiting_queue' => 'boolean',
+        ];
     }
 
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
@@ -97,6 +107,33 @@ class Consultation extends Model
     public function isChatOpen(): bool
     {
         return $this->status === 'active' && (! $this->expires_at || $this->expires_at->isFuture());
+    }
+
+    /** Apakah sesi chat sedang menunggu respon pertama dari konsultan. */
+    public function isWaitingResponse(): bool
+    {
+        return $this->service === 'chat'
+            && $this->status === 'active'
+            && $this->response_deadline_at !== null
+            && $this->consultant_replied_at === null;
+    }
+
+    /** Sisa detik waktu tunggu respon konsultan (null jika tidak sedang menunggu). */
+    public function waitRemainingSeconds(): ?int
+    {
+        if (! $this->isWaitingResponse()) {
+            return null;
+        }
+
+        return max(0, (int) now()->diffInSeconds($this->response_deadline_at, false));
+    }
+
+    /** Mahasiswa berhak pindah/masuk antrian setelah melewati batas tunggu 3 menit tanpa balasan konsultan. */
+    public function canSwitchConsultant(): bool
+    {
+        return $this->isWaitingResponse()
+            && $this->is_paid
+            && $this->response_deadline_at->isPast();
     }
 
     public function remainingSeconds(): ?int

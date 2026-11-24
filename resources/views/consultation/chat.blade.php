@@ -380,6 +380,27 @@
         .meet-form input[type="date"], .meet-form input[type="time"], .meet-form input[type="text"] { width: 100%; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; font: inherit; }
         .btn-pay { margin-top: 8px; padding: 9px 16px; border: 0; border-radius: 10px; background: var(--purple); color: #fff; font: 700 13.5px "DM Sans", sans-serif; cursor: pointer; }
         .btn-pay:hover { background: var(--purple-dark); }
+
+        .switch-box { padding: 14px 18px; border-top: 1px solid #f3dfbd; background: #fff9ef; font-size: 13.5px; }
+        .switch-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+        .switch-head b { color: #9a5b12; }
+        .switch-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .switch-card { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+        .switch-card img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+        .switch-card .sw-info { font-size: 12.5px; line-height: 1.35; }
+        .switch-card .sw-info small { color: var(--muted); display: block; }
+        .btn-sw { padding: 6px 12px; border: 0; border-radius: 8px; background: var(--purple); color: #fff; font: 700 12px "DM Sans", sans-serif; cursor: pointer; }
+        .btn-sw:hover { background: var(--purple-dark); }
+        .btn-queue { padding: 7px 14px; border: 1px solid var(--purple); border-radius: 8px; background: #fff; color: var(--purple-dark); font: 700 12.5px "DM Sans", sans-serif; cursor: pointer; }
+        .btn-queue:hover { background: var(--purple-soft); }
+
+        .review-box { padding: 16px 18px; border-top: 1px solid var(--line); background: #fcfaff; font-size: 13.5px; }
+        .review-box h4 { margin: 0 0 8px; font-size: 14.5px; color: var(--ink); }
+        .stars { display: inline-flex; gap: 6px; margin-bottom: 10px; }
+        .star-btn { border: 0; background: none; font-size: 22px; color: #d6cfe2; cursor: pointer; padding: 0 2px; transition: .15s; }
+        .star-btn.on { color: #f5a623; }
+        .review-form textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; min-height: 60px; resize: vertical; margin-bottom: 8px; }
+        .review-done { color: #1f7a50; font-weight: 600; }
     </style>
 </head>
 
@@ -463,7 +484,11 @@
     </div>
 
     <div class="notice-bar err" id="errBar" hidden></div>
+    <div class="switch-box" id="switchBox" hidden></div>
     <div class="notice-bar" id="closedBar" hidden></div>
+    @if ($role === 'student')
+        <div class="review-box" id="reviewBox" hidden></div>
+    @endif
 
     <form class="input-area" id="chatForm" autocomplete="off">
         <input type="text" id="chatInput" maxlength="2000" placeholder="Tulis pesan...">
@@ -621,6 +646,9 @@
         'poll' => route('consultation.messages', $consultation),
         'send' => route('consultation.messages.store', $consultation),
         'close' => route('consultation.close', $consultation),
+        'switch' => route('consultation.switch', $consultation),
+        'queue' => route('consultation.queue', $consultation),
+        'review' => route('consultation.review.store', $consultation),
     ]) }};
 
     var ROLE = {{ Illuminate\Support\Js::from($role) }};
@@ -635,7 +663,9 @@
     var timerEl = document.getElementById('timer');
     var endBtn = document.getElementById('endBtn');
     var errBar = document.getElementById('errBar');
+    var switchBox = document.getElementById('switchBox');
     var closedBar = document.getElementById('closedBar');
+    var reviewBox = document.getElementById('reviewBox');
 
     var seen = {};
     box.querySelectorAll('[data-id]').forEach(function (el) {
@@ -643,6 +673,7 @@
     });
 
     var endAt = null;
+    var waitEndAt = null;
     var polling = false;
 
     function scrollDown() {
@@ -693,6 +724,19 @@
             return;
         }
 
+        if (state.waiting_response && !state.started) {
+            var wLeft = waitEndAt === null ? 0 : Math.max(0, Math.round((waitEndAt - Date.now()) / 1000));
+            if (wLeft > 0) {
+                timerEl.textContent = 'Menunggu respon ' + pad(Math.floor(wLeft / 60)) + ':' + pad(wLeft % 60);
+                timerEl.className = 'timer warn';
+            } else {
+                timerEl.textContent = state.waiting_queue ? 'Dalam antrian...' : 'Konsultan belum respon';
+                timerEl.className = 'timer warn';
+                if (!state.can_switch) poll();
+            }
+            return;
+        }
+
         if (endAt === null) {
             timerEl.textContent = state.timed ? 'Timer ' + state.minutes + ' menit belum dimulai' : 'Chat koordinasi';
             timerEl.className = 'timer';
@@ -706,9 +750,160 @@
         if (left === 0) poll();
     }
 
+    function renderSwitchBox(s) {
+        if (!switchBox) return;
+        if (ROLE !== 'student' || !s.open || !s.can_switch) {
+            switchBox.hidden = true;
+            return;
+        }
+
+        switchBox.hidden = false;
+        switchBox.innerHTML = '';
+
+        var head = document.createElement('div');
+        head.className = 'switch-head';
+
+        var title = document.createElement('b');
+        title.textContent = s.waiting_queue
+            ? 'Kamu sedang dalam antrian menunggu. Jika ada konsultan yang selesai melayani mahasiswa sebelumnya, sesi otomatis dialihkan.'
+            : 'Konsultan belum merespon dalam 3 menit. Kamu berhak memilih konsultan lain atau masuk antrian menunggu.';
+        head.appendChild(title);
+
+        if (!s.waiting_queue) {
+            var qBtn = document.createElement('button');
+            qBtn.type = 'button';
+            qBtn.className = 'btn-queue';
+            qBtn.textContent = 'Masuk Antrian Menunggu';
+            qBtn.addEventListener('click', function () {
+                qBtn.disabled = true;
+                request(URLS.queue, { method: 'POST' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) { if (data.state) applyState(data.state); poll(); })
+                    .catch(function () { qBtn.disabled = false; });
+            });
+            head.appendChild(qBtn);
+        }
+
+        switchBox.appendChild(head);
+
+        var list = s.available_consultants || [];
+        if (list.length > 0) {
+            var wrap = document.createElement('div');
+            wrap.className = 'switch-list';
+            list.forEach(function (c) {
+                var card = document.createElement('div');
+                card.className = 'switch-card';
+
+                var img = document.createElement('img');
+                img.src = c.foto;
+                img.alt = c.nama;
+                card.appendChild(img);
+
+                var info = document.createElement('div');
+                info.className = 'sw-info';
+                var nm = document.createElement('strong');
+                nm.textContent = c.nama;
+                var sub = document.createElement('small');
+                sub.textContent = c.kompetensi + ' · ★ ' + c.rating;
+                info.appendChild(nm);
+                info.appendChild(sub);
+                card.appendChild(info);
+
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn-sw';
+                btn.textContent = 'Pilih';
+                btn.addEventListener('click', function () {
+                    btn.disabled = true;
+                    request(URLS.switch, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ consultant_id: c.id })
+                    })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.redirect) window.location.href = data.redirect;
+                        else { showError(data.error || 'Gagal pindah konsultan.'); btn.disabled = false; }
+                    })
+                    .catch(function () { showError('Koneksi bermasalah.'); btn.disabled = false; });
+                });
+                card.appendChild(btn);
+                wrap.appendChild(card);
+            });
+            switchBox.appendChild(wrap);
+        } else {
+            var empty = document.createElement('div');
+            empty.style.color = 'var(--muted)';
+            empty.textContent = 'Saat ini belum ada konsultan lain yang kosong di prodi ini. Kamu bisa tetap menunggu di antrian.';
+            switchBox.appendChild(empty);
+        }
+    }
+
+    function renderReviewBox(s) {
+        if (!reviewBox || ROLE !== 'student' || s.open || s.redirect) {
+            if (reviewBox) reviewBox.hidden = true;
+            return;
+        }
+
+        reviewBox.hidden = false;
+        if (s.reviewed && s.review) {
+            reviewBox.innerHTML = '<div class="review-done"><i class="fa-solid fa-star" style="color:#f5a623"></i> Rating kamu: ' + s.review.rating + '/5' + (s.review.ulasan ? ' — "' + s.review.ulasan.replace(/</g, '&lt;') + '"' : '') + '</div>';
+            return;
+        }
+
+        if (reviewBox.dataset.rendered) return;
+        reviewBox.dataset.rendered = '1';
+
+        var chosen = 5;
+        reviewBox.innerHTML = '<h4>Beri Rating & Ulasan Konsultan</h4>'
+            + '<div class="stars" id="starRow">'
+            + [1,2,3,4,5].map(function (n) { return '<button type="button" class="star-btn on" data-v="' + n + '">★</button>'; }).join('')
+            + '</div>'
+            + '<div class="review-form"><textarea id="revText" maxlength="1000" placeholder="Tulis ulasan pengalaman konsultasimu (opsional)..."></textarea>'
+            + '<button type="button" class="btn-sw" id="revSubmit">Kirim Rating</button></div>';
+
+        var btns = reviewBox.querySelectorAll('.star-btn');
+        btns.forEach(function (b) {
+            b.addEventListener('click', function () {
+                chosen = parseInt(b.getAttribute('data-v'), 10);
+                btns.forEach(function (x) {
+                    x.classList.toggle('on', parseInt(x.getAttribute('data-v'), 10) <= chosen);
+                });
+            });
+        });
+
+        reviewBox.querySelector('#revSubmit').addEventListener('click', function () {
+            var sb = reviewBox.querySelector('#revSubmit');
+            sb.disabled = true;
+            request(URLS.review, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rating: chosen, ulasan: reviewBox.querySelector('#revText').value })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.ok) {
+                    state.reviewed = true;
+                    state.review = data.review;
+                    renderReviewBox(state);
+                } else {
+                    showError(data.message || 'Gagal mengirim rating.');
+                    sb.disabled = false;
+                }
+            })
+            .catch(function () { showError('Gagal mengirim rating.'); sb.disabled = false; });
+        });
+    }
+
     function applyState(s) {
+        if (s.redirect) {
+            window.location.href = s.redirect;
+            return;
+        }
+
         state = s;
         endAt = (s.open && s.remaining !== null) ? Date.now() + s.remaining * 1000 : null;
+        waitEndAt = (s.open && s.wait_remaining !== null && s.wait_remaining !== undefined) ? Date.now() + s.wait_remaining * 1000 : null;
 
         input.disabled = !s.open;
         sendBtn.disabled = !s.open;
@@ -722,6 +917,8 @@
             input.placeholder = 'Sesi telah berakhir';
         }
 
+        renderSwitchBox(s);
+        renderReviewBox(s);
         renderTimer();
     }
 

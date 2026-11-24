@@ -75,7 +75,10 @@
                   <span class="tag"><i class="fa-solid {{ $svc['icon'] ?? 'fa-comments' }}"></i> {{ $svc['label'] ?? $c->service }}</span>
                   @if ($c->unread_count > 0)<span class="badge new">{{ $c->unread_count }} baru</span>@endif
                 </b>
-                <small>{{ $c->prodi->nama_prodi }}@if ($c->topik) &middot; {{ \Illuminate\Support\Str::limit($c->topik, 50) }}@endif</small>
+                <small>
+                  <b>Bidang: {{ $c->prodi->nama_prodi }}</b>@if ($c->consultant->kompetensi) ({{ $c->consultant->kompetensi }})@endif
+                  @if ($c->topik) &middot; {{ \Illuminate\Support\Str::limit($c->topik, 50) }}@endif
+                </small>
                 @if ($c->lastMessage)<p>{{ \Illuminate\Support\Str::limit($c->lastMessage->isi, 90) }}</p>@endif
               </div>
               <div class="end">
@@ -108,6 +111,31 @@
             <div class="payrow">
               <span>Selesaikan pembayaran Rp{{ number_format($c->openPayment->amount, 0, ',', '.') }} agar layanan aktif.</span>
               <a href="{{ route('payment.show', $c->openPayment->order_id) }}" class="btn btn-sm">Lanjutkan pembayaran</a>
+            </div>
+          @endif
+
+          @if (! $locked && in_array($c->status, ['closed', 'expired'], true))
+            <div class="payrow" style="background:#faf7ff;">
+              @if ($c->review)
+                <span style="color:#1f7a50;font-weight:700;">
+                  <i class="fa-solid fa-star" style="color:#f5a623"></i> Rating kamu: {{ $c->review->rating }}/5
+                  @if ($c->review->ulasan) &mdash; "{{ \Illuminate\Support\Str::limit($c->review->ulasan, 80) }}" @endif
+                </span>
+              @else
+                <form method="POST" action="{{ route('consultation.review.store', $c) }}" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%;">
+                  @csrf
+                  <label style="font-weight:700;font-size:13px;">Beri Rating:</label>
+                  <select name="rating" required style="padding:6px 10px;border:1px solid #e3d9ee;border-radius:8px;font:inherit;">
+                    <option value="5">★★★★★ (5)</option>
+                    <option value="4">★★★★ (4)</option>
+                    <option value="3">★★★ (3)</option>
+                    <option value="2">★★ (2)</option>
+                    <option value="1">★ (1)</option>
+                  </select>
+                  <input type="text" name="ulasan" maxlength="1000" placeholder="Tulis ulasan (opsional)..." style="flex:1;min-width:160px;padding:6px 10px;border:1px solid #e3d9ee;border-radius:8px;font:inherit;">
+                  <button type="submit" class="btn btn-sm">Kirim Rating</button>
+                </form>
+              @endif
             </div>
           @endif
 
