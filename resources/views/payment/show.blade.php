@@ -266,7 +266,11 @@
           }
       });
 
-      window.addEventListener('load', function () { show('qris'); });
+      if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', function () { show('qris'); });
+      } else {
+          show('qris');
+      }
   })();
   </script>
   @endpush
